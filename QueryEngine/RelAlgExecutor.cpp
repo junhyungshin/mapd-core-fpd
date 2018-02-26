@@ -1398,6 +1398,33 @@ ExecutionResult RelAlgExecutor::executeWorkUnit(const RelAlgExecutor::WorkUnit& 
 
   const auto table_infos = get_table_infos(work_unit.exe_unit, executor_);
 
+  // For UPDATE t SET c1 = expr1, c2 = expr2 ... cn = exprn:
+  // 1. Run SELECT OFFSET_IN_FRAGMENT(), expr1 ... exprn FROM t through
+  //    the executeUpdate() endpoint (example below).
+  // 2. Apply the UpdateLogForFragment to the storage.
+  /*
+  executor_->executeUpdate(work_unit.exe_unit,
+                           table_infos.front(),
+                           co,
+                           eo,
+                           cat_,
+                           executor_->row_set_mem_owner_,
+                           [](const UpdateLogForFragment& update_log) {
+                             LOG(ERROR) << "Fragment: " << update_log.getFragmentIndex();
+                             for (size_t i = 0; i < update_log.getEntryCount(); ++i) {
+                               const auto row = update_log.getEntryAt(i);
+                               CHECK(!row.empty());
+                               for (const auto& col : row) {
+                                 const auto scalar_tv = boost::get<ScalarTargetValue>(&col);
+                                 CHECK(scalar_tv);
+                                 int64_t data = *(boost::get<int64_t>(scalar_tv));
+                                 printf("%ld ", data);
+                               }
+                               puts("");
+                             }
+                           });
+  */
+
   auto ra_exe_unit = decide_approx_count_distinct_implementation(
       work_unit.exe_unit, table_infos, executor_, co.device_type_, target_exprs_owned_);
   auto max_groups_buffer_entry_guess = work_unit.max_groups_buffer_entry_guess;

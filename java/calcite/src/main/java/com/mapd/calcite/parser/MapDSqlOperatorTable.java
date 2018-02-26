@@ -124,6 +124,7 @@ public class MapDSqlOperatorTable extends ChainedSqlOperatorTable {
         opTab.addOperator(new Unlikely());
         opTab.addOperator(new Sign());
         opTab.addOperator(new Truncate());
+        opTab.addOperator(new OffsetInFragment());
         opTab.addOperator(new ApproxCountDistinct());
         if (extSigs == null) {
             return;
@@ -597,6 +598,27 @@ public class MapDSqlOperatorTable extends ChainedSqlOperatorTable {
             truncate_sig.add(SqlTypeFamily.NUMERIC);
             truncate_sig.add(SqlTypeFamily.INTEGER);
             return truncate_sig;
+        }
+    }
+
+    /* OFFSET_IN_FRAGMENT() */
+    public static class OffsetInFragment extends SqlFunction {
+
+        public OffsetInFragment() {
+            super("OFFSET_IN_FRAGMENT",
+                    SqlKind.OTHER_FUNCTION,
+                    null,
+                    null,
+                    OperandTypes.NILADIC,
+                    SqlFunctionCategory.SYSTEM);
+        }
+
+        @Override
+        public RelDataType inferReturnType(SqlOperatorBinding opBinding) {
+            assert opBinding.getOperandCount() == 0;
+            final RelDataTypeFactory typeFactory
+                    = opBinding.getTypeFactory();
+            return typeFactory.createSqlType(SqlTypeName.INTEGER);
         }
     }
 

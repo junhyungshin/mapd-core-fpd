@@ -983,6 +983,10 @@ std::shared_ptr<Analyzer::Expr> RelAlgTranslator::translateSign(const RexFunctio
       operand_ti, false, expr_list, makeExpr<Analyzer::Constant>(operand_ti, true, Datum{0}));
 }
 
+std::shared_ptr<Analyzer::Expr> RelAlgTranslator::translateOffsetInFragment() const {
+  return makeExpr<Analyzer::OffsetInFragment>();
+}
+
 std::shared_ptr<Analyzer::Expr> RelAlgTranslator::translateFunction(const RexFunctionOperator* rex_function) const {
   if (rex_function->getName() == std::string("LIKE") || rex_function->getName() == std::string("PG_ILIKE")) {
     return translateLike(rex_function);
@@ -1050,6 +1054,10 @@ std::shared_ptr<Analyzer::Expr> RelAlgTranslator::translateFunction(const RexFun
   if (rex_function->getName() == std::string("Reinterpret")) {
     CHECK_EQ(size_t(1), rex_function->size());
     return translateScalarRex(rex_function->getOperand(0));
+  }
+  if (rex_function->getName() == std::string("OFFSET_IN_FRAGMENT")) {
+    CHECK_EQ(size_t(0), rex_function->size());
+    return translateOffsetInFragment();
   }
   if (!ExtensionFunctionsWhitelist::get(rex_function->getName())) {
     throw QueryNotSupported("Function " + rex_function->getName() + " not supported");
