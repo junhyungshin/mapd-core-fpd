@@ -38,6 +38,7 @@ struct ExecutionOptions {
   const bool just_validate;
   const bool with_dynamic_watchdog;            // Per work unit, not global.
   const unsigned dynamic_watchdog_time_limit;  // Dynamic watchdog time limit, in milliseconds.
+  const unsigned fpd_max_count;
 };
 
 #endif  // QUERYENGINE_COMPILATIONOPTIONS_H

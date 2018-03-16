@@ -428,13 +428,14 @@ class SessionInfo {
               const UserMetadata& user,
               const ExecutorDeviceType t,
               const std::string& sid)
-      : catalog_(cat), currentUser_(user), executor_device_type_(t), session_id(sid), last_used_time(time(0)) {}
+      : catalog_(cat), currentUser_(user), executor_device_type_(t), session_id(sid), last_used_time(time(0)), fpd_enabled_(false) {}
   SessionInfo(const SessionInfo& s)
       : catalog_(s.catalog_),
         currentUser_(s.currentUser_),
         executor_device_type_(static_cast<ExecutorDeviceType>(s.executor_device_type_)),
-        session_id(s.session_id) {}
-  Catalog& get_catalog() const { return *catalog_; }
+        session_id(s.session_id),
+        fpd_enabled_(s.fpd_enabled_) {}
+  Catalog& get_catalog() const { return *catalog_; };
   const UserMetadata& get_currentUser() const { return currentUser_; }
   const ExecutorDeviceType get_executor_device_type() const { return executor_device_type_; }
   void set_executor_device_type(ExecutorDeviceType t) { executor_device_type_ = t; }
@@ -442,6 +443,8 @@ class SessionInfo {
   time_t get_last_used_time() const { return last_used_time; }
   void update_time() { last_used_time = time(0); }
   bool checkDBAccessPrivileges(const AccessPrivileges& privs) const;
+  const bool fpd_enabled() const { return fpd_enabled_; }
+  void toggle_fpd(bool enabled) { fpd_enabled_ = enabled; }
 
  private:
   std::shared_ptr<Catalog> catalog_;
@@ -449,6 +452,7 @@ class SessionInfo {
   std::atomic<ExecutorDeviceType> executor_device_type_;
   const std::string session_id;
   std::atomic<time_t> last_used_time;  // for cleaning up SessionInfo after client dies
+  bool fpd_enabled_; // flag for interactive optimizer
 };
 
 }  // namespace Catalog_Namespace

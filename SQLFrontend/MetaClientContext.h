@@ -53,6 +53,7 @@ struct MetaClientContext {
   std::string license_key;
   TLicenseInfo license_info;
   std::vector<TCompletionHint> completion_hints;
+  bool fpd_enabled;
 
   MetaClientContext(TTransport& t, CLIENT_TYPE& c)
       : transport(t), client(c), session(INVALID_SESSION_ID), execution_mode(TExecuteMode::GPU) {}

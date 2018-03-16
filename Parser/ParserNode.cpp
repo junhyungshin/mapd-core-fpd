@@ -1925,7 +1925,7 @@ std::shared_ptr<ResultSet> getResultRows(const Catalog_Namespace::SessionInfo& s
   const auto query_ra = calcite_mgr.process(session, pg_shim(select_stmt), true, false);
   CompilationOptions co = {device_type, true, ExecutorOptLevel::LoopStrengthReduction, false};
   ExecutionOptions eo = {false, true, false, true, false, false, false, false, 10000};
-  RelAlgExecutor ra_executor(executor.get(), catalog);
+  RelAlgExecutor ra_executor(executor.get(), session);
   ExecutionResult result{
       std::make_shared<ResultSet>(
           std::vector<TargetInfo>{}, ExecutorDeviceType::CPU, QueryMemoryDescriptor{}, nullptr, nullptr),

@@ -467,4 +467,6 @@ service MapD {
   # licensing
   TLicenseInfo set_license_key(1: TSessionId session, 2: string key, 3: string nonce = "") throws (1: TMapDException e)
   TLicenseInfo get_license_claims(1: TSessionId session, 2: string nonce = "") throws (1: TMapDException e)
+  # filter push-down
+  void toggle_fpd(1: TSessionId session, 2: bool enabled) throws (1: TMapDException e)
 }

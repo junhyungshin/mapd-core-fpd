@@ -1310,6 +1310,12 @@ int main(int argc, char** argv) {
       } else {
         std::cout << "Command object_privileges failed because parameter object name is missing." << std::endl;
       }
+    } else if (!strncmp(line, "\\fpd", 4)) {
+      context.fpd_enabled = true; 
+      (void)thrift_with_retry(kTOGGLE_FPD, context, nullptr);
+    } else if (!strncmp(line, "\\nofpd", 6)) { 
+      context.fpd_enabled = false; 
+      (void)thrift_with_retry(kTOGGLE_FPD, context, nullptr);
     } else if (line[0] == '\\' && line[1] == 'q') {
       break;
     } else {  // Experimental Cleanup

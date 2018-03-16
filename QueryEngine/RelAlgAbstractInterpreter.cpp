@@ -21,6 +21,7 @@
 #include "RelAlgExecutor.h"
 #include "RelAlgOptimizer.h"
 #include "RexVisitor.h"
+#include "FilterPushDown.h"
 
 #include <glog/logging.h>
 #include <rapidjson/stringbuffer.h>
@@ -1443,6 +1444,9 @@ class RelAlgAbstractInterpreter {
       hoist_filter_cond_to_cross_join(nodes_);
     }
     eliminate_dead_columns(nodes_);
+    if(ra_executor_->fpd_enabled()) {
+      pushDownFilterPredicates(nodes_, ra_executor_);
+    }
     coalesce_nodes(nodes_, left_deep_joins);
     CHECK(nodes_.back().unique());
     create_left_deep_join(nodes_);
@@ -1651,7 +1655,13 @@ std::shared_ptr<const RelAlgNode> deserialize_ra_dag(const std::string& query_ra
   query_ast.Parse(query_ra.c_str());
   CHECK(!query_ast.HasParseError());
   CHECK(query_ast.IsObject());
-  RelAlgNode::resetRelAlgFirstId();
+  // do resetRelAlgFirstId only when... 
+  // 1. FPD is disabled: !ra_executor->getSessionInfo().fpd_enabled() 
+  // 2. executing main query, not sub queries from FPD: ra_executor_->fpd_enabled() 
+  // if not, crt_id_ might have duplicate since FPD execute another sub query which resets this
+  if(!ra_executor->getSessionInfo().fpd_enabled() || ra_executor->fpd_enabled()) { 
+    RelAlgNode::resetRelAlgFirstId();
+  }
   return ra_interpret(query_ast, cat, ra_executor);
 }
 

@@ -135,6 +135,10 @@ class RaExecutionDesc {
     body_->setContextData(this);
   }
 
+  void setResultPrecomputed(const ExecutionResult& result) {
+    result_ = result;
+  }  
+
   const RelAlgNode* getBody() const { return body_; }
 
  private:

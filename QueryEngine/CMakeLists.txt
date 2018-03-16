@@ -30,6 +30,7 @@ set(query_engine_source_files
     ExtensionFunctionsWhitelist.cpp
     ExtensionFunctions.ast
     ExtensionsIR.cpp
+    FilterPushDown.cpp
     GpuInterrupt.cpp
     GpuMemUtils.cpp
     InPlaceSort.cpp

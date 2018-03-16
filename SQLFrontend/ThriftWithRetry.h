@@ -121,6 +121,9 @@ bool thrift_with_retry(SERVICE_ENUM which_service, CLIENT_CONTEXT& context, char
       case kGET_COMPLETION_HINTS:
         context.client.get_completion_hints(context.completion_hints, context.session, arg, -1);
         break;
+      case kTOGGLE_FPD:
+        context.client.toggle_fpd(context.session, context.fpd_enabled);
+        break;
     }
   } catch (TMapDException& e) {
     std::cerr << e.error_msg << std::endl;

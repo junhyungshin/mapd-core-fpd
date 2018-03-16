@@ -121,7 +121,7 @@ ExecutionResult run_select_query(const std::string& query_str,
   ExecutionOptions eo = {false, true, false, allow_loop_joins, false, false, false, false, 10000};
   auto& calcite_mgr = cat.get_calciteMgr();
   const auto query_ra = calcite_mgr.process(*session, pg_shim(query_str), true, false);
-  RelAlgExecutor ra_executor(executor.get(), cat);
+  RelAlgExecutor ra_executor(executor.get(), *session);
   return ra_executor.executeRelAlgQuery(query_ra, co, eo, nullptr);
 }
 

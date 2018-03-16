@@ -2273,7 +2273,7 @@ void MapDHandler::execute_rel_alg(TQueryResult& _return,
                          g_dynamic_watchdog_time_limit};
   auto executor = Executor::getExecutor(
       cat.get_currentDB().dbId, jit_debug_ ? "/tmp" : "", jit_debug_ ? "mapdquery" : "", mapd_parameters_, nullptr);
-  RelAlgExecutor ra_executor(executor.get(), cat);
+  RelAlgExecutor ra_executor(executor.get(), session_info);
   ExecutionResult result{
       std::make_shared<ResultSet>(
           std::vector<TargetInfo>{}, ExecutorDeviceType::CPU, QueryMemoryDescriptor{}, nullptr, nullptr),
@@ -2309,7 +2309,7 @@ void MapDHandler::execute_rel_alg_df(TDataFrame& _return,
                          g_dynamic_watchdog_time_limit};
   auto executor = Executor::getExecutor(
       cat.get_currentDB().dbId, jit_debug_ ? "/tmp" : "", jit_debug_ ? "mapdquery" : "", mapd_parameters_, nullptr);
-  RelAlgExecutor ra_executor(executor.get(), cat);
+  RelAlgExecutor ra_executor(executor.get(), session_info);
   const auto result = ra_executor.executeRelAlgQuery(query_ra, co, eo, nullptr);
   const auto rs = result.getRows();
   const auto copy = rs->getArrowCopy(data_mgr_.get(), device_type, device_id, getTargetNames(result.getTargetsMeta()));
@@ -2982,4 +2982,11 @@ void MapDHandler::set_license_key(TLicenseInfo& _return,
 void MapDHandler::get_license_claims(TLicenseInfo& _return, const TSessionId& session, const std::string& nonce) {
   const auto session_info = get_session(session);
   _return.claims.push_back("");
+}
+
+void MapDHandler::toggle_fpd(const TSessionId& session, bool enabled) { 
+  mapd_lock_guard<mapd_shared_mutex> write_lock(sessions_mutex_); 
+  auto session_it = get_session_it(session); 
+  session_it->second.get()->toggle_fpd(enabled); 
+  LOG(INFO) << "FILTER PUSH-DOWN: " << (enabled ? "enabled" : "disabled") << std::endl; 
 }

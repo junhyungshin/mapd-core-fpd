@@ -39,8 +39,11 @@ struct FirstStepExecutionResult {
 
 class RelAlgExecutor {
  public:
-  RelAlgExecutor(Executor* executor, const Catalog_Namespace::Catalog& cat)
-      : executor_(executor), cat_(cat), now_(0), queue_time_ms_(0) {}
+  RelAlgExecutor(Executor* executor, const Catalog_Namespace::SessionInfo& session)
+      : executor_(executor), session_(session), cat_(session.get_catalog()), now_(0), queue_time_ms_(0), fpd_enabled_(session.fpd_enabled()) {}
+
+  RelAlgExecutor(Executor* executor, const Catalog_Namespace::SessionInfo& session, const bool fpd_enabled)
+      : executor_(executor), session_(session), cat_(session.get_catalog()), now_(0), queue_time_ms_(0), fpd_enabled_(fpd_enabled) {}
 
   ExecutionResult executeRelAlgQuery(const std::string& query_ra,
                                      const CompilationOptions& co,
@@ -82,6 +85,32 @@ class RelAlgExecutor {
   TableGenerations computeTableGenerations(const RelAlgNode* ra);
 
   Executor* getExecutor() const;
+
+  const Catalog_Namespace::SessionInfo& getSessionInfo() { return session_; }
+
+  const bool fpd_enabled() { return fpd_enabled_; }
+
+  ExecutionResult executeRelAlgQueryFPD(const RelAlgNode* ra, unsigned fpd_max_count);
+
+  void addPushDownFilter(const int table_id, ExecutionResult& result) {
+    auto row_set = boost::get<RowSetPtr>(&result.getDataPtr());
+    if (row_set) {
+      CHECK_LT(size_t(0), (*row_set)->colCount());
+    }
+    CHECK_LT(table_id, 0);
+    ExecutionResult result_copy(std::move(result));
+    const auto it_ok = push_down_filters_.insert(std::make_pair(table_id, std::move(result_copy)));
+    CHECK(it_ok.second);
+  }
+
+  void addHashJoinCol(const int t_id_lhs, const int t_id_rhs) {
+    hash_join_cols_.emplace(t_id_lhs, t_id_rhs);
+    hash_join_cols_.emplace(t_id_rhs, t_id_lhs);
+  }
+
+  std::unordered_multimap<int, int>& getHashJoinCols() {
+    return hash_join_cols_;
+  }
 
  private:
   ExecutionResult executeRelAlgQueryNoRetry(const std::string& query_ra,
@@ -228,8 +257,11 @@ class RelAlgExecutor {
       const bool just_explain) const;
 
   Executor* executor_;
+  const Catalog_Namespace::SessionInfo& session_;
   const Catalog_Namespace::Catalog& cat_;
   TemporaryTables temporary_tables_;
+  std::unordered_map<int, const ExecutionResult> push_down_filters_;
+  std::unordered_multimap<int, int> hash_join_cols_;
   time_t now_;
   std::vector<std::shared_ptr<Analyzer::Expr>> target_exprs_owned_;  // TODO(alex): remove
   std::vector<RexSubQuery*> subqueries_;
@@ -237,6 +269,7 @@ class RelAlgExecutor {
   int64_t queue_time_ms_;
   static SpeculativeTopNBlacklist speculative_topn_blacklist_;
   static const size_t max_groups_buffer_entry_default_guess{16384};
+  const bool fpd_enabled_;
 };
 
 #endif  // QUERYENGINE_RELALGEXECUTOR_H

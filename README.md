@@ -1,3 +1,23 @@
+# Filter Push-Down extension for MapD
+
+This repo is a clon of MapD (https://github.com/mapd/mapd-core) as of v3.6.0, and contains new/modified files for Filter Push-Down extension.
+
+You can enable Filter Push-Down by typing backslash command \fpd in mapdql.
+Disable this feature by typing \nofpd.
+
+There are two factors for Filter Push-down declared in FilterPushDown.h:
+
+1. PUSH_DOWN_MIN_TABLE_SIZE (= 100000)
+  This is the minimum size of table to execute Filter Push-Down.
+  If the size of a table is less than this value, this table will be skipped for Filter Push-Down.
+  
+2. PUSH_DOWN_MAX_SELECTIVITY (= 0.05)
+  This is the maximum ratio of the filtered rows to execute Filter Push-Down.
+  If the number of filtered rows is greater than the size of associated table by a factor of this number, Filter Push-Down will not be performed.
+
+You can simply change these values if you want to try different values.
+=========
+
 MapD Core
 =========
 
