@@ -1990,24 +1990,31 @@ std::vector<size_t> get_node_input_permutation(const std::vector<InputTableInfo>
   if(!hash_join_cols.empty()) {
     std::vector<size_t> inputs_to_add;
     std::swap(input_permutation, inputs_to_add);
-    auto it_max = std::max_element(inputs_to_add.begin(), inputs_to_add.end(),
-      [&table_infos](const size_t lhs_index, const size_t rhs_index) {
-        return table_infos[lhs_index].info.getNumTuples() < table_infos[rhs_index].info.getNumTuples();
-      });
-    input_permutation.push_back(*it_max);
-    inputs_to_add.erase(it_max);
+    std::sort(inputs_to_add.begin(),
+              inputs_to_add.end(),
+              [&table_infos](const size_t lhs_index, const size_t rhs_index) {
+                return table_infos[lhs_index].info.getNumTuples() > table_infos[rhs_index].info.getNumTuples();
+              });
+    input_permutation.push_back(*(inputs_to_add.begin()));
+    inputs_to_add.erase(inputs_to_add.begin());
     while(!inputs_to_add.empty()) {
       size_t max_num_tuples = -1; int max_table = -1; int dist = 0;
       for(auto input : input_permutation) {
         auto it_table = hash_join_cols.equal_range(input);
-        for(auto it = it_table.first; it != it_table.second; ++it) {
-          auto it_find = std::find(inputs_to_add.begin(), inputs_to_add.end(), it->second);
-          if(it_find != inputs_to_add.end()) {
-            auto num_tuples = table_infos[it->second].info.getNumTuples();
-            if(max_table == -1 || num_tuples > max_num_tuples) {
-              max_table = it->second;
-              max_num_tuples = num_tuples;
-              dist = std::distance(inputs_to_add.begin(), it_find);
+        if(it_table.first == it_table.second) {
+          // if this happens, just follow the existing strategy: get the next largest table
+          input_permutation.push_back(*(inputs_to_add.begin()));
+          inputs_to_add.erase(inputs_to_add.begin());
+        } else {
+          for(auto it = it_table.first; it != it_table.second; ++it) {
+            auto it_find = std::find(inputs_to_add.begin(), inputs_to_add.end(), it->second);
+            if(it_find != inputs_to_add.end()) {
+              auto num_tuples = table_infos[it->second].info.getNumTuples();
+              if(max_table == -1 || num_tuples > max_num_tuples) {
+                max_table = it->second;
+                max_num_tuples = num_tuples;
+                dist = std::distance(inputs_to_add.begin(), it_find);
+              }
             }
           }
         }

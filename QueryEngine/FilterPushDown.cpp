@@ -6,7 +6,7 @@ bool pushDownFilterPredicates(std::vector<std::shared_ptr<RelAlgNode>>& nodes,
   RelAlgExecutor* ra_executor) {
   schema_map_.clear();
   std::unordered_map<const RelAlgNode*, std::pair<size_t, bool>> table_sizes;
-  size_t max_size_so_far = 0; RelAlgNode* max_table;
+  size_t max_size_so_far = 0; RelAlgNode* max_table = nullptr;
   for(auto it_nodes = nodes.begin(); it_nodes != nodes.end(); ++it_nodes) {
     auto node_scan = std::dynamic_pointer_cast<RelScan>(*it_nodes);
     if(node_scan) {
@@ -16,7 +16,7 @@ bool pushDownFilterPredicates(std::vector<std::shared_ptr<RelAlgNode>>& nodes,
       }
       auto num_tuples = getNumTuples(node_scan->getTableDescriptor()->tableId,
                                      ra_executor->getSessionInfo().get_catalog());
-      if(num_tuples > max_size_so_far) {
+      if(max_size_so_far == 0 || num_tuples > max_size_so_far) {
         max_size_so_far = num_tuples;
         max_table = node_scan.get();
       }
@@ -30,6 +30,7 @@ bool pushDownFilterPredicates(std::vector<std::shared_ptr<RelAlgNode>>& nodes,
         if(!extractHashJoinCol(nodes, node_filter->getCondition(), ra_executor)) {
           return false;
         }
+        CHECK(max_table);
         table_sizes[max_table].second = true;
         return evaluateAndPushDown(nodes, ra_executor, table_sizes);
       }
@@ -357,37 +358,34 @@ std::unique_ptr<const RexScalar> findFilterAndProjectFromRex(const RexScalar* re
   if(rex_operator) {
     std::vector<std::unique_ptr<const RexScalar>> operands_new;
     auto oper_size = rex_operator->size();
-    if(oper_size == 2) {
-      const auto rex_input_lhs = dynamic_cast<const RexInput*>(rex_operator->getOperand(0));
-      const auto rex_input_rhs = dynamic_cast<const RexInput*>(rex_operator->getOperand(1));
-      if(rex_input_lhs && rex_input_rhs) {
-        unsigned t_id_lhs, t_id_rhs;
-        std::tie(t_id_lhs, std::ignore) = 
-          findColumnNameByIndex(rex_input_lhs->getSourceNode(), rex_input_lhs->getIndex());
-        std::tie(t_id_rhs, std::ignore) = 
-          findColumnNameByIndex(rex_input_rhs->getSourceNode(), rex_input_rhs->getIndex());
-        if(t_id_lhs != t_id_rhs) {
-          // this is a join condition, so we need to add this to cols_to_project
-          // but don't add this to filter predicate, so we return nullptr
-          auto c_info_lhs = getColumnInfoFromScan(rex_input_lhs, node_scan->getId());
-          if(!c_info_lhs.second.empty()) {
-            auto it = std::lower_bound(cols_to_project.begin(), cols_to_project.end(), c_info_lhs,
-              [](auto lhs, auto rhs) { return lhs.first < rhs.first;});
-            if(it == cols_to_project.end() || !(*it == c_info_lhs)) {
-              cols_to_project.emplace(it, std::move(c_info_lhs));
-            }
-          } else {
-            auto c_info_rhs = getColumnInfoFromScan(rex_input_rhs, node_scan->getId());
-            if(!c_info_rhs.second.empty()) {
-              auto it = std::lower_bound(cols_to_project.begin(), cols_to_project.end(), c_info_rhs,
-                [](auto lhs, auto rhs) { return lhs.first < rhs.first;});
-              if(it == cols_to_project.end() || !(*it == c_info_rhs)) {
-                cols_to_project.emplace(it, std::move(c_info_rhs));
-              }
-            }
+    if(oper_size >= 2) {
+      std::vector<std::pair<unsigned, std::string>> c_infos_tmp;
+      unsigned t_id_prev = 0;
+      bool has_joint_condition = false;
+      for(size_t i = 0; i < oper_size; i++) {
+        const auto rex_input = dynamic_cast<const RexInput*>(rex_operator->getOperand(i));
+        if(rex_input) {
+          auto t_id = findColumnNameByIndex(rex_input->getSourceNode(), rex_input->getIndex()).first;
+          if(t_id_prev == 0) {
+            t_id_prev = t_id;
+          } else if(!has_joint_condition && t_id_prev != t_id) {
+            has_joint_condition = true;
           }
-          return nullptr; 
+          auto c_info = getColumnInfoFromScan(rex_input, node_scan->getId());
+          if(!c_info.second.empty()) {
+            c_infos_tmp.push_back(std::move(c_info));
+          }
         }
+      }
+      if(has_joint_condition) {
+        for(auto& c_info : c_infos_tmp) {
+          auto it = std::lower_bound(cols_to_project.begin(), cols_to_project.end(), c_info,
+            [](auto lhs, auto rhs) { return lhs.first < rhs.first;});
+          if(it == cols_to_project.end() || !(*it == c_info)) {
+            cols_to_project.emplace(it, std::move(c_info));
+          }
+        }
+        return nullptr;
       }
     }
     for(size_t i = 0; i < oper_size; i++) {
@@ -400,8 +398,12 @@ std::unique_ptr<const RexScalar> findFilterAndProjectFromRex(const RexScalar* re
     if(operands_new.size() > 1) {
       const auto rex_func_operator = dynamic_cast<const RexFunctionOperator*>(rex);
       if(rex_func_operator) {
-        return std::unique_ptr<const RexScalar>(
-          new RexFunctionOperator(rex_func_operator->getName(), operands_new, rex_func_operator->getType()));
+        if(operands_new.size() != oper_size) {
+          return nullptr; // in case of func_operator, #operands must match
+        } else {
+          return std::unique_ptr<const RexScalar>(
+            new RexFunctionOperator(rex_func_operator->getName(), operands_new, rex_func_operator->getType()));
+        }
       } else {
         return std::unique_ptr<const RexScalar>(
           new RexOperator(rex_operator->getOperator(), operands_new, rex_operator->getType()));
@@ -701,34 +703,30 @@ std::unique_ptr<const RexScalar> buildNewFilterExpr(const RexScalar* rex,
   if(rex_operator) {
     std::vector<std::unique_ptr<const RexScalar>> operands_new;
     auto oper_size = rex_operator->size();
-    if(oper_size == 2) {
-      const auto rex_input_lhs = dynamic_cast<const RexInput*>(rex_operator->getOperand(0));
-      const auto rex_input_rhs = dynamic_cast<const RexInput*>(rex_operator->getOperand(1));
-      if(rex_input_lhs && rex_input_rhs) {
-        unsigned t_id_lhs, t_id_rhs;
-        std::tie(t_id_lhs, std::ignore) = 
-          findColumnNameByIndex(rex_input_lhs->getSourceNode(), rex_input_lhs->getIndex());
-        std::tie(t_id_rhs, std::ignore) = 
-          findColumnNameByIndex(rex_input_rhs->getSourceNode(), rex_input_rhs->getIndex());
-        if(t_id_lhs == t_id_rhs) {
-          // this is a filter condition,
-          // so we return nullptr if this is filter on this table
-          auto c_info = getColumnInfoFromScan(rex_input_lhs, node_scan->getId());
+    if(oper_size >= 2) {
+      std::vector<std::pair<unsigned, std::string>> c_infos_tmp;
+      unsigned t_id_prev = 0;
+      bool has_joint_condition = false;
+      for(size_t i = 0; i < oper_size; i++) {
+        const auto rex_input = dynamic_cast<const RexInput*>(rex_operator->getOperand(i));
+        if(rex_input) {
+          auto t_id = findColumnNameByIndex(rex_input->getSourceNode(), rex_input->getIndex()).first;
+          if(t_id_prev == 0) {
+            t_id_prev = t_id;
+          } else if(!has_joint_condition && t_id_prev != t_id) {
+            has_joint_condition = true;
+          }
+          auto c_info = getColumnInfoFromScan(rex_input, node_scan->getId());
           if(!c_info.second.empty()) {
-            return nullptr;
+            c_infos_tmp.push_back(std::move(c_info));
           }
         }
-      } else if(rex_input_lhs) {
-        auto c_info = getColumnInfoFromScan(rex_input_lhs, node_scan->getId());
-        if(!c_info.second.empty()) {
+      }
+      if(!has_joint_condition) {
+        if(!c_infos_tmp.empty()) { // at least a single column is on this table
           return nullptr;
         }
-      } else if(rex_input_rhs) {
-        auto c_info = getColumnInfoFromScan(rex_input_rhs, node_scan->getId());
-        if(!c_info.second.empty()) {
-          return nullptr;
-        }
-      } 
+      }
     }
     for(size_t i = 0; i < oper_size; i++) {
       auto operand_new = 
@@ -741,8 +739,12 @@ std::unique_ptr<const RexScalar> buildNewFilterExpr(const RexScalar* rex,
     if(operands_new.size() > 1) {
       const auto rex_func_operator = dynamic_cast<const RexFunctionOperator*>(rex);
       if(rex_func_operator) {
-        return std::unique_ptr<const RexScalar>(
-          new RexFunctionOperator(rex_func_operator->getName(), operands_new, rex_func_operator->getType()));
+        if(operands_new.size() != oper_size) {
+          return nullptr; // in case of func_operator, #operands must match
+        } else {
+          return std::unique_ptr<const RexScalar>(
+            new RexFunctionOperator(rex_func_operator->getName(), operands_new, rex_func_operator->getType()));
+        }
       } else {
         return std::unique_ptr<const RexScalar>(
           new RexOperator(rex_operator->getOperator(), operands_new, rex_operator->getType()));
