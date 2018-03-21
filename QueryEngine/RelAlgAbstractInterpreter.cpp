@@ -1445,7 +1445,7 @@ class RelAlgAbstractInterpreter {
     }
     eliminate_dead_columns(nodes_);
     if(ra_executor_->fpd_enabled()) {
-      pushDownFilterPredicates(nodes_, ra_executor_);
+      push_down_filter_predicates(nodes_, ra_executor_);
     }
     coalesce_nodes(nodes_, left_deep_joins);
     CHECK(nodes_.back().unique());
