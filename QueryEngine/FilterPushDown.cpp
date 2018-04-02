@@ -318,6 +318,32 @@ class FilterPushDown {
     if(rex_literal) {
       return rex_literal->deepCopy();
     }
+    const auto rex_func_operator = dynamic_cast<const RexFunctionOperator*>(rex);
+    if(rex_func_operator) {
+      std::vector<std::unique_ptr<const RexScalar>> operands_new;
+      std::vector<std::pair<unsigned, std::string>> c_infos_tmp;
+      auto oper_size = rex_func_operator->size();
+      for(size_t i = 0; i < oper_size; i++) {
+        auto operand_new =
+          findFilterAndProjectFromFuncOper(rex_func_operator->getOperand(i), node_scan, c_infos_tmp);
+        if(operand_new) {
+          operands_new.push_back(std::move(operand_new));
+        }
+      }
+      if(operands_new.size() != oper_size) {
+        for(auto& c_info : c_infos_tmp) {
+          auto it = std::lower_bound(cols_to_project.begin(), cols_to_project.end(), c_info,
+            [](auto lhs, auto rhs) { return lhs.first < rhs.first;});
+          if(it == cols_to_project.end() || !(*it == c_info)) {
+            cols_to_project.emplace(it, std::move(c_info));
+          }
+        }
+        return nullptr;
+      } else {
+        return std::unique_ptr<const RexScalar>(
+          new RexFunctionOperator(rex_func_operator->getName(), operands_new, rex_func_operator->getType()));
+      }
+    }
     const auto rex_operator = dynamic_cast<const RexOperator*>(rex);
     if(rex_operator) {
       std::vector<std::unique_ptr<const RexScalar>> operands_new;
@@ -360,18 +386,8 @@ class FilterPushDown {
         }
       }
       if(operands_new.size() > 1) {
-        const auto rex_func_operator = dynamic_cast<const RexFunctionOperator*>(rex);
-        if(rex_func_operator) {
-          if(operands_new.size() != oper_size) {
-            return nullptr; // in case of func_operator, #operands must match
-          } else {
-            return std::unique_ptr<const RexScalar>(
-              new RexFunctionOperator(rex_func_operator->getName(), operands_new, rex_func_operator->getType()));
-          }
-        } else {
-          return std::unique_ptr<const RexScalar>(
-            new RexOperator(rex_operator->getOperator(), operands_new, rex_operator->getType()));
-        }
+        return std::unique_ptr<const RexScalar>(
+          new RexOperator(rex_operator->getOperator(), operands_new, rex_operator->getType()));
       } else if(operands_new.size() == 1) {
         if(dynamic_cast<const RexOperator*>(operands_new[0].get()) ||
            dynamic_cast<const RexCase*>(operands_new[0].get())) {
@@ -415,6 +431,45 @@ class FilterPushDown {
       return nullptr;
     }
     CHECK(rex_input || rex_literal || rex_operator || rex_case || rex_ref || rex_sub_query);
+    return nullptr;
+  }
+
+  std::unique_ptr<const RexScalar> findFilterAndProjectFromFuncOper(const RexScalar* rex,
+    std::shared_ptr<RelAlgNode>& node_scan,
+    std::vector<std::pair<unsigned, std::string>>& c_infos_tmp) {
+    const auto rex_input = dynamic_cast<const RexInput*>(rex);
+    if(rex_input) {
+      auto c_info = getColumnInfoFromScan(rex_input, node_scan->getId());
+      if(!c_info.second.empty()) {
+        c_infos_tmp.push_back(std::move(c_info));
+        return std::unique_ptr<const RexScalar>(new RexInput(node_scan.get(), c_info.first));
+      } else {
+        return nullptr;
+      }
+    }
+    const auto rex_literal = dynamic_cast<const RexLiteral*>(rex);
+    if(rex_literal) {
+      return rex_literal->deepCopy();
+    }
+    const auto rex_func_operator = dynamic_cast<const RexFunctionOperator*>(rex);
+    if(rex_func_operator) {
+      std::vector<std::unique_ptr<const RexScalar>> operands_new;
+      auto oper_size = rex_func_operator->size();
+      for(size_t i = 0; i < oper_size; i++) {
+        auto operand_new = findFilterAndProjectFromFuncOper(rex_func_operator->getOperand(i),
+                                                            node_scan, c_infos_tmp);
+        if(operand_new) {
+          operands_new.push_back(std::move(operand_new));
+        }
+      }
+      if(operands_new.size() != oper_size) {
+        return nullptr;
+      } else {
+        return std::unique_ptr<const RexScalar>(
+          new RexFunctionOperator(rex_func_operator->getName(), operands_new, rex_func_operator->getType()));
+      }
+    }
+    CHECK(rex_input || rex_literal || rex_func_operator);
     return nullptr;
   }
 
@@ -663,6 +718,21 @@ class FilterPushDown {
     if(rex_literal) {
       return rex_literal->deepCopy();
     }
+    const auto rex_func_operator = dynamic_cast<const RexFunctionOperator*>(rex);
+    if(rex_func_operator) {
+      std::vector<std::unique_ptr<const RexScalar>> operands_new;
+      auto oper_size = rex_func_operator->size();
+      for(size_t i = 0; i < oper_size; i++) {
+        auto operand_new = 
+          buildNewFilterExpr(rex_func_operator->getOperand(i),
+                             node_scan, node_output, input_idx, cols_to_project);
+        if(operand_new) {
+          operands_new.push_back(std::move(operand_new));
+        }
+      }
+      return std::unique_ptr<const RexScalar>(
+        new RexFunctionOperator(rex_func_operator->getName(), operands_new, rex_func_operator->getType()));
+    }
     const auto rex_operator = dynamic_cast<const RexOperator*>(rex);
     if(rex_operator) {
       std::vector<std::unique_ptr<const RexScalar>> operands_new;
@@ -701,18 +771,8 @@ class FilterPushDown {
         }
       }
       if(operands_new.size() > 1) {
-        const auto rex_func_operator = dynamic_cast<const RexFunctionOperator*>(rex);
-        if(rex_func_operator) {
-          if(operands_new.size() != oper_size) {
-            return nullptr; // in case of func_operator, #operands must match
-          } else {
-            return std::unique_ptr<const RexScalar>(
-              new RexFunctionOperator(rex_func_operator->getName(), operands_new, rex_func_operator->getType()));
-          }
-        } else {
-          return std::unique_ptr<const RexScalar>(
-            new RexOperator(rex_operator->getOperator(), operands_new, rex_operator->getType()));
-        }
+        return std::unique_ptr<const RexScalar>(
+          new RexOperator(rex_operator->getOperator(), operands_new, rex_operator->getType()));
       } else if(operands_new.size() == 1) {
         if(dynamic_cast<const RexOperator*>(operands_new[0].get()) ||
            dynamic_cast<const RexCase*>(operands_new[0].get())) {
